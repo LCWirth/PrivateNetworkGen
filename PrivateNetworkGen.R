@@ -22,9 +22,9 @@ wealth = wealth/max(wealth)
 # --------------------------- parameter input --------------------------- # 
 x = wealth #true data input
 #x = c(1,2,3,4,5,6,7,8,9,10) #true data input
-l=1 #box size
+bs=1 #box size
 m = 10 #size of partition (we consider the uniform partition of the cube of size l)
-partl = l/m
+partl = bs/m
 eps = 4 #privacy parameter
 n = length(x)
 a = 20 #expected number points in network based on observed data
@@ -34,7 +34,7 @@ b = 20 #expected number points in network based on private data
 # --------------------------- apply privacy mechanism on node level --------------------------- # 
 
 #partiton
-setofboxes = data.frame(c(0,l))#,0,l))
+setofboxes = data.frame(c(0,bs))#,0,l))
 names(setofboxes) <- "Whole Space"
 row.names(setofboxes) <- c("xmin","xmax")#, "ymin","ymax")
 
@@ -49,7 +49,6 @@ for (k in 1:m) {
 tcounts = rep(0,m)
 
 for (i in 1:n) {
-  print(i)
   for (k in 1:m) {
     print(k)
     if(x[i]>= setofboxes[[k+1]][1] && x[i]<= setofboxes[[k+1]][2]){
@@ -103,9 +102,9 @@ v_hat = lp(direction = "min", objective.in = obj, const.mat = A, const.dir = con
 # --------------------------- jointly generate network data based on Chung-Lu model --------------------------- # 
 
 #sample graph size
-Kn = rpois(1,(a-min(a,b))*l)
-Km = rpois(1,(b-min(a,b))*l)
-L = rpois(1,min(a,b)*l)
+Kn = rpois(1,(a-min(a,b))*bs)
+Km = rpois(1,(b-min(a,b))*bs)
+L = rpois(1,min(a,b)*bs)
 N = Kn + L
 M = Km + L
 
@@ -171,6 +170,9 @@ for (k in 1:m) {
           next
         }
         if(sum(Z_vec[l,]) == 0){
+          next
+        }
+        if(k == l && i == j){
           next
         }
         # states (tau,sigma) are (1,1), (1,0), (0,1), (0,0)
@@ -297,10 +299,49 @@ plot_gSigma <- ggraph(g_s, layout = cbind(xi$coord_x1,xi$coord_x2))+#, label = p
 #axis.line = element_line(colour = "black"),
 #panel.border = element_rect(colour = "black",fill=NA, linewidth = 1))
 plot_gSigma
-xi$coord_x1==eta$coord_x1
+
 
 # --------------------------- computation of FGW distance in python file --------------------------- # 
 
 # export graphs for computation in python
-path = getwd()
 
+path = getwd()
+## create folder
+#if (dir.exists(file.path(path, "GraphData"))){
+#  setwd(file.path(path, "GraphData"))
+#} else {
+#  dir.create(file.path(path, "GraphData"))
+#  setwd(file.path(path, "GraphData"))
+#}
+
+#file_name1 <- paste("NetworkObservedDataEdgesBoxSize=",bs, "intensity=", a," , ", b ,"partition=", m, "eps=",eps, ".csv",col="", sep="")
+#file_name2 <- paste("NetworkObservedDataWeightsBoxSize=",bs, "intensity=", a," , ", b ,"partition=", m, "eps=",eps, ".csv",col="", sep="")
+#file_name3 <- paste("NetworkPrivacyMechEdgesBoxSize=",bs, "intensity=", a," , ", b ,"partition=", m, "eps=",eps, ".csv",col="", sep="")
+#file_name4 <- paste("NetworkPrivacyMechWeightsBoxSize=",bs, "intensity=", a," , ", b ,"partition=", m, "eps=",eps, ".csv",col="", sep="")
+
+if(FALSE){
+  write.csv(cbind( tau$from[tau$from>0], tau$to[tau$from>0]), file_name1)
+  write.csv(eta$y, file_name2)
+  
+  write.csv(cbind( sigma$from[sigma$from>0], sigma$to[sigma$from>0]), file_name3)
+  write.csv(eta$y, file_name4)
+}
+
+setwd(path)
+
+## run python file
+library(reticulate)
+
+ot <- import("ot")
+np <- import("numpy")
+alpha = 0.5
+
+#pairwise distances of node features
+M = ot$dist(np$transpose(np$asmatrix(eta$y)),np$transpose(np$asmatrix(xi$y)))
+
+#adjacency matrices
+adj_sigma = as.matrix(as_adjacency_matrix(g_s))
+adj_tau = as.matrix(as_adjacency_matrix(g_t))
+
+FGW = ot$fused_gromov_wasserstein(M = M , C1 = np$asmatrix(adj_tau), C2 = np$asmatrix(adj_sigma), alpha=alpha,features_metric='sqeuclidean')
+FGW[1]
