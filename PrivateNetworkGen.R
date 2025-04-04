@@ -23,9 +23,9 @@ wealth = wealth/max(wealth)
 x = wealth #true data input
 #x = c(1,2,3,4,5,6,7,8,9,10) #true data input
 bs=1 #box size
-m = 10 #size of partition (we consider the uniform partition of the cube of size l)
+m = 15 #size of partition (we consider the uniform partition of the cube of size l)
 partl = bs/m
-eps = 4 #privacy parameter
+eps = 2 #privacy parameter
 n = length(x)
 a = 20 #expected number points in network based on observed data
 b = 20 #expected number points in network based on private data
@@ -199,7 +199,13 @@ for (k in 1:m) {
       }
       for(i in 1:sum(N_vec[k,])){
         for(j in 1:sum(N_vec[l,])){
-          if(k == l && j >i){
+          if(k == l && j >=i){
+            next
+          }
+          if(sum(N_vec[k,]) == 0){
+            next
+          }
+          if(sum(N_vec[l,]) == 0){
             next
           }
           #create edges for non-common vertex counts in tau
@@ -216,7 +222,13 @@ for (k in 1:m) {
       }
       for(i in 1:sum(M_vec[k,])){
         for(j in 1:sum(M_vec[l,])){
-          if(k == l && j >i){
+          if(k == l && j >=i){
+            next
+          }
+          if(sum(M_vec[k,]) == 0){
+            next
+          }
+          if(sum(M_vec[l,]) == 0){
             next
           }
           #create edges for non-common vertex counts in sigma
@@ -329,7 +341,7 @@ if(FALSE){
 
 setwd(path)
 
-## run python file
+## run python code to calculate FGW
 library(reticulate)
 
 ot <- import("ot")
