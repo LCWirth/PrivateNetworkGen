@@ -10,6 +10,18 @@ library(DiscreteLaplace)
 library(lpSolve)
 library(ggraph)
 
+
+
+# --------------------------- start private network generation --------------------------- # 
+
+# --------------------------- parameter input --------------------------- # 
+eps = 2 #privacy parameter
+bs=1 #box size
+m = 10 #size of partition (we consider the uniform partition of the d-dim cube of size l)
+partl = bs/m
+
+# --------------------------- data input --------------------------- #
+#Example 1 
 #data input
 data(florentine_m)
 wealth = V(florentine_m)$wealth
@@ -17,24 +29,27 @@ wealth = V(florentine_m)$wealth
 #normalize (to be in [0,1])
 wealth = wealth/max(wealth)
 
-# --------------------------- start private network generation --------------------------- # 
-
-# --------------------------- parameter input --------------------------- # 
 x = wealth #true data input
-#x = c(1,2,3,4,5,6,7,8,9,10) #true data input
-bs=1 #box size
-m = 15 #size of partition (we consider the uniform partition of the cube of size l)
-partl = bs/m
-eps = 2 #privacy parameter
 n = length(x)
-a = 20 #expected number points in network based on observed data
-b = 20 #expected number points in network based on private data
+a = 16 #expected number points in network based on observed data
+b = 16 #expected number points in network based on private data
+c = 2  #constant factor in edge creation (k(x,y) = min(1,x*y*c))
 
+
+#Example 2 
+#n = 100
+#x = c(runif(n/2, 0, 0),runif(n/2, 1,1))
+#a = 100 #expected number points in network based on observed data
+#b = 100 #expected number points in network based on private data
+#c = 1   #constant factor in edge creation (k(x,y) = min(1,x*y*c))
+#m = round(sqrt(eps)*sqrt(n))
+#partl = bs/m
 
 # --------------------------- apply privacy mechanism on node level --------------------------- # 
 
 #partiton
-setofboxes = data.frame(c(0,bs))#,0,l))
+
+setofboxes = data.frame(c(0,bs))
 names(setofboxes) <- "Whole Space"
 row.names(setofboxes) <- c("xmin","xmax")#, "ymin","ymax")
 
@@ -50,7 +65,7 @@ tcounts = rep(0,m)
 
 for (i in 1:n) {
   for (k in 1:m) {
-    print(k)
+    #print(k)
     if(x[i]>= setofboxes[[k+1]][1] && x[i]<= setofboxes[[k+1]][2]){
       tcounts[k] = tcounts[k] +1
     }
@@ -98,7 +113,7 @@ constraints_dir = append(rep(">=",3*m),"=")
 
 ##solve
 v_hat = lp(direction = "min", objective.in = obj, const.mat = A, const.dir = constraints_dir, const.rhs = B)$solution[(m+1):(2*m)]
-
+v_hat
 # --------------------------- jointly generate network data based on Chung-Lu model --------------------------- # 
 
 #sample graph size
@@ -136,9 +151,11 @@ for(k in 1:m){
       xi$k[k_xi + i] = k
     }
   }
+  
   for(i in 1:Nk){
     if (Nk > 0) {
-      eta$y[k_eta + i] = runif(1,min = setofboxes[[k+1]][1],setofboxes[[k+1]][2])
+      ptsinbox = x[x <= setofboxes[[k+1]][2] & x >= setofboxes[[k+1]][1]]
+      eta$y[k_eta + i] = ptsinbox[rdunif(1 ,min = 1,length(ptsinbox))]
       eta$N_k[k_eta + i] = i
       eta$k[k_eta + i] = k
     }
@@ -150,7 +167,7 @@ for(k in 1:m){
 #create edges
 ## define function kappa
 kappa <- function(x,y){
-  return (min(1,x*y*2))
+  return (min(1,x*y*c))
 }
 
 ## create edges for common vertex counts
@@ -159,6 +176,7 @@ tau = data.frame("id" = 1:(N*(N-1)/2), from = rep(0, N*(N-1)/2), to = rep(0, N*(
 
 id_s = 0
 id_t = 0
+
 for (k in 1:m) {
   for (l in k:m){
     for(i in 1:sum(Z_vec[k,])){
@@ -166,9 +184,16 @@ for (k in 1:m) {
         next
       }
       for(j in 1:sum(Z_vec[l,])){
-        if(k == l && j >i){
-          next
-        }
+        #if(max(tau$from == eta$id[eta$k == k & eta$N_k == i + sum(Z_vec[k,])] & tau$to == eta$id[eta$k == l & eta$N_k == j + sum(Z_vec[l,])])==1){
+          #if edge already exists
+        #  print("double edge in Z_vec for tau")
+        #  next
+        #}
+        #if(max(sigma$from == xi$id[xi$k == k & xi$M_k == i + sum(Z_vec[k,])] & sigma$to == xi$id[xi$k == l & xi$M_k == j + sum(Z_vec[l,])])==1){
+          #if edge already exists
+        #  print("double edge in Z_vec for tau")
+        #  next
+        #}
         if(sum(Z_vec[l,]) == 0){
           next
         }
@@ -197,23 +222,31 @@ for (k in 1:m) {
           id_s = id_s + 1
         }
       }
+    }
       for(i in 1:sum(N_vec[k,])){
         for(j in 1:sum(N_vec[l,])){
-          if(k == l && j >=i){
-            next
-          }
           if(sum(N_vec[k,]) == 0){
             next
           }
           if(sum(N_vec[l,]) == 0){
             next
           }
+          if(max(tau$from == eta$id[eta$k == k & eta$N_k == i + sum(Z_vec[k,])] & tau$to == eta$id[eta$k == l & eta$N_k == j + sum(Z_vec[l,])])==1){
+            #if edge already exists
+            next
+          }
+          if(k == l && j ==i){
+            #not self loops
+            next
+          }
+          
           #create edges for non-common vertex counts in tau
           kappa_t = max(0, kappa(max(0,eta$y[eta$k == k & eta$N_k == i + sum(Z_vec[k,])]),max(0,eta$y[eta$k == l & eta$N_k == j + sum(Z_vec[l,])])))
           edge = rbern(1, prob = kappa_t)
           #print(paste(kappa_t, edge))
           if(edge == 1){
             #add edge to tau
+            #print("edge to tau")
             tau$from[id_t] = eta$id[eta$k == k & eta$N_k == i + sum(Z_vec[k,])]
             tau$to[id_t] = eta$id[eta$k == l & eta$N_k == j + sum(Z_vec[l,])]
             id_t = id_t + 1
@@ -222,26 +255,34 @@ for (k in 1:m) {
       }
       for(i in 1:sum(M_vec[k,])){
         for(j in 1:sum(M_vec[l,])){
-          if(k == l && j >=i){
-            next
-          }
           if(sum(M_vec[k,]) == 0){
             next
           }
           if(sum(M_vec[l,]) == 0){
             next
           }
+          if(max(sigma$from == xi$id[xi$k == k & xi$M_k == i + sum(Z_vec[k,])] & sigma$from ==xi$id[xi$k == l & xi$M_k == j + sum(Z_vec[l,])])==1){
+            #if edge already exists
+            print("double edge detected")
+            next
+          }
+          if(k == l && j ==i){
+            #no self loops
+            next
+          }
+          
           #create edges for non-common vertex counts in sigma
           kappa_s = max(0,kappa(max(0,xi$y[xi$k == k & xi$M_k == i + sum(Z_vec[k,])]),max(0,xi$y[xi$k == l & xi$M_k == j + sum(Z_vec[l,])])))
           edge = rbern(1, prob = kappa_s)
           if(edge == 1){
             #add edge to sigma
+            #print(paste("Length of from",length(xi$id[xi$k == k & xi$M_k == i + sum(Z_vec[k,])]),"with i,j",i,j))
             sigma$from[id_s] = xi$id[xi$k == k & xi$M_k == i + sum(Z_vec[k,])]
             sigma$to[id_s] = xi$id[xi$k == l & xi$M_k == j + sum(Z_vec[l,])]
             #print(paste(sigma$from[id_s],sigma$to[id_s]))
             id_s = id_s + 1
           }
-        }
+        
       }
     }
   }
@@ -264,6 +305,7 @@ plot_gTau <- ggraph(g_t, layout = "graphopt")+ #layout = cbind(eta$coord_x1,eta$
   #geom_node_point(color = "darkred", size =3)+
   #geom_node_text(aes(label = verticesG1), color = 'white', size =0)+
   #coord_fixed(xlim=c(0.5,2.35), ylim = c(0.4,2.3))+
+  #coord_fixed(xlim=c(min(eta$coord_x1),max(eta$coord_x1)), ylim = c(min(eta$coord_x2),max(eta$coord_x2)))+
   theme_void()+
   theme(plot.margin = margin(0.2, 0.2, 0.2, 0.2, "cm"),
         panel.background = element_blank(),
@@ -301,7 +343,7 @@ plot_gSigma <- ggraph(g_s, layout = cbind(xi$coord_x1,xi$coord_x2))+#, label = p
   #scale_color_gradient(low="lightblue3", high="darkblue")+
   #geom_node_point(color = "darkred", size =3)+
   #geom_node_text(aes(label = verticesG1), color = 'white', size =0)+
-  #coord_fixed(xlim=c(0.5,2.35), ylim = c(0.4,2.3))+
+  #coord_fixed(xlim=c(min(eta$coord_x1),max(eta$coord_x1)), ylim = c(min(eta$coord_x2),max(eta$coord_x2)))+
   theme_void()+
   theme(plot.margin = margin(0.2, 0.2, 0.2, 0.2, "cm"),
         panel.background = element_blank(),
@@ -349,11 +391,12 @@ np <- import("numpy")
 alpha = 0.5
 
 #pairwise distances of node features
-M = ot$dist(np$transpose(np$asmatrix(eta$y)),np$transpose(np$asmatrix(xi$y)))
+Ma = ot$dist(np$transpose(np$asmatrix(eta$y)),np$transpose(np$asmatrix(xi$y)))
 
 #adjacency matrices
 adj_sigma = as.matrix(as_adjacency_matrix(g_s))
 adj_tau = as.matrix(as_adjacency_matrix(g_t))
 
-FGW = ot$fused_gromov_wasserstein(M = M , C1 = np$asmatrix(adj_tau), C2 = np$asmatrix(adj_sigma), alpha=alpha,features_metric='sqeuclidean')
+FGW = ot$fused_gromov_wasserstein(M = Ma , C1 = np$asmatrix(adj_tau), C2 = np$asmatrix(adj_sigma), alpha=alpha,features_metric='sqeuclidean')
 FGW[1]
+N
