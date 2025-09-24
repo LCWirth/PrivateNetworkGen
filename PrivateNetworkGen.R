@@ -15,12 +15,12 @@ library(ggraph)
 # --------------------------- start private network generation --------------------------- # 
 
 # --------------------------- parameter input --------------------------- # 
-eps = 0.1 #privacy parameter
+eps = 0.01 #privacy parameter
 bs=1 #box size
 maxiter = 1000 #number of iterations
-example = 3 #one of 1,2,3
+example = 2 #one of 1,2,3
 #if example == 3: make n dependent on eps
-n = 50000
+#n = 1000
 seed = runif(1,min = 1, max = 100000)
 
 # --------------------------- data input --------------------------- #
@@ -37,6 +37,7 @@ if(example == 1){
   n = length(x)
   d = 1
   m = 10
+  m_overall = m
   a = 16 #expected number points in network based on observed data
   b = 16 #expected number points in network based on private data
   c = 2  #constant factor in edge creation (k(x,y) = min(1,x*y*c))
@@ -49,13 +50,14 @@ if(example == 1){
 
 # --------------------------- Example 2 --------------------------- #
 if(example == 2){
-  n = 1000
+  #n = 1000
   d = 1
-  x = c(runif(n/2, 0, 0),runif(n/2, 1,1))
+  x = matrix(c(runif(n/2, 0, 0),runif(n/2, 1,1)), ncol = d)
   c = 1   #constant factor in edge creation (k(x,y) = min(1,x*y*c))
   m = round((eps*(n))^(d/(d+1))) #optimal partition size
-  a = m^(2/d) #expected number points in network based on observed data
-  b = m^(2/d) #expected number points in network based on private data
+  m_overall = m
+  #a = m^(2/d) #expected number points in network based on observed data
+  #b = m^(2/d) #expected number points in network based on private data
   
   ## define function kappa
   kappa <- function(x,y){
@@ -74,7 +76,8 @@ if(example == 3){
   data_wo_students = data_wo_students[data_wo_students$`Economic Activity` != -9,]
   
   x <- data_wo_students[c("Age", "Health", "Economic Activity")]
-  x <- x[1:n,]
+  n_max <- length(data_wo_students$Age)
+  x <- x[1:min(n,n_max),]
   
   #normalize data
   x$Age <- as.numeric(as.character(x$Age))
@@ -95,10 +98,21 @@ if(example == 3){
   ## define function kappa
   kappa <- function(x,y){
     # x,y 3-dim vectors
+    
+    if (length(x) == 0 || length(y) == 0) return(0)
+    if (any(is.na(x)) || any(is.na(y))) return(0)
+    if (length(x) < 3 || length(y) < 3) return(0)
+    
+    
+    if (length(x) < 3 || length(y) < 3) {
+      # Not enough elements to compute
+      return(0)
+    }
+    
     f_age = abs(x[1]-y[1]) #similar age is favorable for edges
     f_health = abs(1-x[2]*y[2]) #the smaller, the "healthier" and thus the higher prob of edges
     f_ea = abs(x[3]-y[3]) #similar economic activity is favourable for edges
-    return (1/3*(f_age +f_health + f_ea))
+    return (as.numeric(1/3*(f_age +f_health + f_ea)))
   }
 }
 # --------------------------- run several iterations --------------------------- # 
@@ -107,6 +121,8 @@ timing = rep(0,maxiter)
 dist_FGW= rep(0,maxiter)
 timing_FGW = rep(0,maxiter)
 #print parameters
+print(paste0("eps = ",eps))
+print(paste0("n = ",n))
 print(paste0("graph size a = ",a))
 print(paste0("partition size m = ",m_overall))
 
@@ -315,8 +331,16 @@ for (iter in 1:maxiter){
             next
           }
           # states (tau,sigma) are (1,1), (1,0), (0,1), (0,0)
-          kappa_t = max(0, kappa(eta[eta$k == k & eta$N_k == i,paste0("y",1:d)],eta[eta$k == l & eta$N_k == j,paste0("y",1:d)]))
-          kappa_s = max(0,kappa(xi[xi$k == k & xi$M_k == i,paste0("y",1:d)],xi[xi$k == l & xi$M_k == j,paste0("y",1:d)]))
+          if(length(eta[eta$k == k & eta$N_k == i,])>0 && length(eta[eta$k == l & eta$N_k == j,])>0){
+            kappa_t = max(0, kappa(eta[eta$k == k & eta$N_k == i,paste0("y",1:d)],eta[eta$k == l & eta$N_k == j,paste0("y",1:d)]))
+          }else{
+            kappa_t = 0
+          }
+          if(length(xi[xi$k == k & xi$M_k == i,])>0 && length(xi[xi$k == l & xi$M_k == j,]) >0){
+            kappa_s = max(0,kappa(xi[xi$k == k & xi$M_k == i,paste0("y",1:d)],xi[xi$k == l & xi$M_k == j,paste0("y",1:d)]))
+          }else{
+            kappa_s = 0
+          }
           #print(paste("kappa_t ", kappa_t, "k = ", k, "i = ",i,"l = ", l, "j = ", j))
           p_1 = min(kappa_t,kappa_s)
           p_2 = kappa_t - p_1
@@ -355,7 +379,11 @@ for (iter in 1:maxiter){
             }
           
             #create edges for non-common vertex counts in tau
-            kappa_t = max(0, kappa(eta[eta$k == k & eta$N_k == i + sum(Z_vec[k,]), paste0("y",1:d)],eta[eta$k == l & eta$N_k == j + sum(Z_vec[l,]), paste0("y",1:d)]))
+            if(length(eta[eta$k == k & eta$N_k == i+ sum(Z_vec[k,]),])>0 && length(eta[eta$k == l & eta$N_k == j+ sum(Z_vec[l,]),])>0){
+              kappa_t = max(0, kappa(eta[eta$k == k & eta$N_k == i + sum(Z_vec[k,]), paste0("y",1:d)],eta[eta$k == l & eta$N_k == j + sum(Z_vec[l,]), paste0("y",1:d)]))
+            }else{
+              kappa_t = 0
+            }
             edge = rbern(1, prob = kappa_t)
             #print(paste(kappa_t, edge))
             if(edge == 1){
@@ -386,7 +414,11 @@ for (iter in 1:maxiter){
             }
           
             #create edges for non-common vertex counts in sigma
-            kappa_s = max(0,kappa(max(0,xi$y1[xi$k == k & xi$M_k == i + sum(Z_vec[k,])]),max(0,xi$y1[xi$k == l & xi$M_k == j + sum(Z_vec[l,])])))
+            if(length(xi[xi$k == k & xi$M_k == i+ sum(Z_vec[k,]),])>0 && length(xi[xi$k == l & xi$M_k == j+ sum(Z_vec[l,]),]) >0){
+              kappa_s = max(0,kappa(xi[xi$k == k & xi$M_k == i + sum(Z_vec[k,]),paste0("y",1:d)],xi[xi$k == l & xi$M_k == j + sum(Z_vec[l,]),paste0("y",1:d)]))
+            }else{
+              kappa_s = 0
+            }
             edge = rbern(1, prob = kappa_s)
             if(edge == 1){
               #add edge to sigma
